@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+  <head>
+  <title>A ReasonML Command Line Program</title>
+  <style type="text/css">
+body {
+  font-family: helvetica, arial, sans-serif;
+}
+
+blockquote {
+  margin-left: 2em;
+  width: 70%;
+  padding: 0.5em;
+  border: 1px solid gray;
+}
+
+code {
+  background-color: #eee;
+}
+  </style>
+  </head>
+  
+<body>
+<p><em>This article is written for someone who has some familiarity with ReasonML.</em></p>
+
+<p>
+I have been writing documentation for <a href="https://github.com/reazen/relude">Relude</a>, a standard library replacement ("prelude") written in ReasonML, targeting compilation to JavaScript. I’m using Markdown to document the library functions. Here’s what the documentation looks like for the `length()` function for arrays.
+</p>
+
+<blockquote><pre>
+/**
+  `length(xs)` returns the number of items in `xs`.
+
+  ## Example
+  ```re
+  length([|"a", "b", "c"|]) == 3;
+  length([| |]) == 0;
+  ```
+*/
+let length: array('a) =&gt; int = Belt.Array.length;
+</pre></blockquote>
+
+<p>
+To make sure that my example code was correct, I was copying and pasting the example code
+(between the lines with <code>```re</code> and <code>```</code>)
+into a ReasonML file, surrounding it with <code>Js.log()</code> calls,
+and running it:
+</p>
+
+<blockquote><pre>
+  Js.log(length([|"a", "b", "c"|]) == 3));
+  Js.log(length([| |] == 0);
+</pre></blockquote>
+
+<p>
+This soon became tiresome, it was error-prone, and the result was a list of `true` (or `false`), with no
+real clue of which test was which. I decided to write a program to extract the examples for me and add
+the console logging, which included the test itself:
+</p>
+
+<blockquote><pre>
+Js.log("================");
+Js.log2("length([|\"a\", \"b\", \"c\"|]) == 3; ",
+  length([|"a", "b", "c"|]) == 3);
+Js.log2("length([| |]) == 0; ",
+  length([| |]) == 0);
+</pre></blockquote>
+
+<p>
+I’ve written a command-line program which is run like this:
+</p>
+
+<blockquote><pre>node MakeTests.re path/to/Relude_<i>Module</i>.re Relude.<i>Module</i> > Tests.re</pre></blockquote>
+
+<p>
+I need to pass the module name as the last argument so that the program can create an <code>open</code> for the module at the beginning of the test file. Here’s the main program code, which gets the command-line arguments, checks them for validity, and calls a function to process the file:
+</p>
+
+<blockquote><pre>let nodeArg = Belt.Array.getExn(Node.Process.argv, 0);
+let progArg = Belt.Array.getExn(Node.Process.argv, 1);
+let fileOpt = Belt.Array.get(Node.Process.argv, 2);
+let moduleNameOpt = Belt.Array.get(Node.Process.argv, 3);
+
+switch (fileOpt, moduleNameOpt) {
+  | (Some(inFileName), Some(moduleName)) => processFile(inFileName, moduleName)
+  | ( _, _) =>
+    Js.log("Usage: " ++ nodeArg ++ " " ++ progArg ++ " InputFile.re ModuleName")
+};</pre></blockquote>
+
+<p>
+The first two lines get the first two command line arguments: the path to <code>node</code> and the name of our program. The <code>Belt.Array.getExn()</code> functions throws an exception if the item in the array doesn’t exist, but I know that can’t happen here&mdash;you <em>must</em> have specified <code>node</code> and the program name, or the program wouldn’t be running at all!
+</p>
+
+<p>
+The next two lines are a different story, as the person running the program might leave out the file and module name. In this case, we don’t want to throw an exception or (possibly worse) get a <code>null</code> or <code>undefined</code> to haunt us. Instead, we use <code>Belt.Array.get()</code>, which returns an <a href="https://reasonml.github.io/docs/en/null-undefined-option"><code>option</code></a> type result: <code>Some(value)</code> if the array item exists, <code>None</code> if it doesn’t. When you have <code>option</code> type, ReasonML makes sure you handle both the <code>Some()</code> and <code>None</code> values. That’s what the <code>switch</code> statement does. If the user provided both arguments, it extracts them from their <code>Some()</code> wrapper and pass them on the <code>processFile()</code> function. Otherwise, it provides an appropriate error message telling people how to run the program.
+</p>
+
+
+<h2>Processing the Source File</h2>
+<p>
+Now is where I have to step back and <em>plan</em> what it means to “process the file.“ While I am scanning the source file, I need to keep track of three things:
+</p>
+<ol>
+  <li>Whether I am in example code or not.</li>
+  <li>All of the lines in the current example.</li>
+  <li>The resulting output string.</li>
+</ol>
+
+<p>
+Here are the types I defined for that purpose:
+</p>
+
+<blockquote><pre>type scanStateType =
+  | Scanning
+  | InExample;
+  
+type stateType = {
+  scanState: scanStateType,
+  exampleLines: array(string),
+  result: string
+};</pre></blockquote>
+
+<p>
+Why not use a <code>bool</code> variable instead of creating a type for the scanning state? At this point in my planning (and, it turned out, in the final program), I had only two states, but I had the nagging feeling that I might need more than two. I might still need more than two if I want to add capabilities to the program.
+</p>
+
+<p>
+The <code>stateType</code> is a <em>record</em> type, which is the ideal choice for a collection of heterogeneous dat.
+</p>
+
+<p>
+Now that I have my types, I can write the code to process a file: read in the file as one large string,
+split into an array of lines, set up an initial state, and then use <code>reduce()</code> to convert the array of
+strings into the result string. The initial <code>result</code> starts out with the <code>open</code> for the module:
+<p>
+
+<blockquote><pre> 1 let processFile = (inFileName:string, moduleName: string): unit => {
+ 2   let fileContents = Node.Fs.readFileAsUtf8Sync(inFileName);
+ 3   let lines = Js.String.split("\n", fileContents);
+ 4   let init = {
+ 5     scanState: Scanning,
+ 6     exampleLines: [| |],
+ 7    result: "open " ++ moduleName ++ ";\n\n"
+ 8   };
+ 9
+10   let finalResult =
+11    Belt.Array.reduce(lines, init, lineReducer);
+12
+13   Js.log(finalResult.result);
+14 };</pre></blockquote>
+
+<p>
+The initial state (lines 4-8) is a variable of type <code>stateType</code>. ReasonML’s inference engine figured that out
+without me having to declare it. I could have made it explicit by changing line 4 to:
+</p>
+
+<blockquote><pre>let init: stateType = {</pre></blockquote>
+
+<h3>Processing a Line</h3>
+<p>
+On to the <code>lineReducer()</code> function, whose logic is as follows: If I’m scanning and encounter a <code>```re</code>, I switch my scan state to be “in an example“ and set the lines of the example to the empty array (as I haven’t gotten to those lines yet).  
+</p>
+
+<blockquote><pre> 1 let lineReducer = (acc: stateType, line: string): stateType => {
+ 2   switch (acc.scanState) {
+ 3     | Scanning => {
+ 4         if (Js.Re.test_([%re "/```re/"], line)) {
+ 5           {...acc,
+ 6             scanState: InExample,
+ 7             exampleLines: [| |]
+ 8           }
+ 9         } else {
+10           acc;
+11         }
+12       }</pre></blockquote>
+      
+<p>
+Of interest here are lines 5-8, where I set the new accumulator value. The code <code>...acc</code> uses the <em>spread</em> operator, which means “use all the fields in <code>acc</code> as they currently are.” I then set new values for only the changed fields. Without the spread operator, I would have had to update all the fields in the accumulator:
+</p>
+
+<blockquote><pre>  {
+    result: acc.result; /* keep result field unchanged */
+    scanState: InExample, /* update other fields */
+    exampleLines: [| |]
+  }</pre></blockquote>
+  
+<p>
+In this program, spread doesn’t save me a lot of effort, as the <code>stateType</code> record has only three fields. If I had a record with many more fields, though, this would have been an indspensable shortcut.
+</p>
+
+<p>If I’m in an example and encounter <code>```</code>, I process the example lines (by adding the <code>Js.log</code> and other cleanup) and return to scanning for another example (lines 3-9). Otherwise, I trim off leading and trailing spaces from the line and add it to the example lines (lines 11-14).</p>
+
+<blockquote><pre> 1     | InExample => {
+ 2         if (Js.Re.test_([%re "/```/"], line)) {
+ 3           {...acc,
+ 4             result: acc.result
+ 5               ++ "Js.log(\"================\");\n"
+ 6               ++ processExampleLines(acc.exampleLines)
+ 7               ++ "\n",
+ 8             scanState: Scanning
+ 9           }
+10         } else {
+11           {...acc,
+12              exampleLines: Belt.Array.concat(acc.exampleLines,
+13                [| Js.String.trim(line) |])
+14            }
+15          }
+16       } 
+17     }
+18   };</pre></blockquote>
+
+
+<h3>Processing an Example</h3>
+<p>
+I can’t just blindly surround each line of the example with a <code>Js.log2();</code> for two reasons:
+</p>
+<ul>
+  <li>Some of the examples take up more than one line.</li>
+  <li>Some of the examples may contain a double quote mark, which must be escaped.</li>
+</ul>
+
+<p>
+Let’s tackle the second problem first. For readability, I created a function to escape quote marks:
+</p>
+
+<blockquote><pre>let escapeQuotes = (s: string): string => {
+  Js.String.replaceByRe([%re "/\"/g"],"\\\"", s);
+};</pre></blockquote>
+
+<p>
+The first problem is solved by accumulating all the lines until I find one with an ending semicolon (I have been very careful to make sure that all statements in the examples end with semicolons.) Once I have a “complete line,” I escape its quotes, get rid of the semicolon, and enclose it in <code>Js.log2()</code>.  If the code line isn’t complete, I add it to the statement I’m accumulating.
+</p>
+
+<p>
+This is, again, a job for <code>reduce</code>, but this time I have <em>two</em> things to keep accumulating: the result of processing all the example lines, and the statement that is currently being built. Rather than create a new type, my accumulator is a two-tuple: <code>(result, stmt)</code>.
+</p>
+
+<p>
+Here’s the finished code to process the example lines:
+</p>
+
+<blockquote><pre> 1 let processExampleLines = (arr: array(string)): string => {
+ 2  let endStmtPattern = [%re "/;\\s*$/"];
+ 3
+ 4   let helper = ((result, stmt), item) => {
+ 5     if (Js.Re.test_(endStmtPattern, stmt ++ item)) {
+ 6       (result
+ 7         ++ "Js.log2(\""
+ 8         ++ escapeQuotes(stmt ++ item)
+ 9         ++ " \",\n  "
+10         ++ Js.String.replaceByRe(endStmtPattern, "", stmt ++ item) \
+11        ++ ");\n",
+12        "")
+13     } else {
+14       (result, stmt ++ item ++ "\n  ")
+15     }
+16   }
+17   let (result, _) = Belt.Array.reduce(arr, ("", ""), helper);
+18   result;
+19 };</pre></blockquote>
+
+<p>
+A few things to note:
+</p>
+<ul>
+  <li>The pattern for detecting an end of statement (line 2) allows blanks after the semicolon.</li>
+  <li>Line 4 uses <em>destructuring</em> to bind the variable names <code>result</code> and <code>stmt</code> to the elements of the tuple.</li>
+  <li>The tuple that is returned if I detect the end of a statement (lines 6-12) sets the “complete line accumulator” (the second element of the tuple in line 12) to the empty string&mdash;I am starting a new statement.</li>
+  <li>In line 17, I bind the result tuple from <code>reduce</code> to <code>(result, _)</code> I am interested in the final result, but don’t care about the last statement that was processed. The underscore is ReasonML’s way of saying, “ignore this.”</li>
+</ul>
+
+</body>
+</html>
