@@ -14,11 +14,19 @@ function processExampleLines(arr) {
   var helper = function (param, item) {
     var stmt = param[1];
     var result = param[0];
-    if (endStmtPattern.test(stmt + item)) {
-      return /* tuple */[
-              result + ("Js.log2(\"" + (escapeQuotes(stmt + item) + (" \",\n  " + ((stmt + item).replace(endStmtPattern, "") + ");\n")))),
-              ""
-            ];
+    var full_stmt = stmt + item;
+    if (endStmtPattern.test(full_stmt)) {
+      if ((/^let\s+/).test(full_stmt)) {
+        return /* tuple */[
+                result + (full_stmt + "\n"),
+                ""
+              ];
+      } else {
+        return /* tuple */[
+                result + ("Js.log2(\"" + (escapeQuotes(full_stmt) + (" \",\n  " + (full_stmt.replace(endStmtPattern, "") + ");\n")))),
+                ""
+              ];
+      }
     } else {
       return /* tuple */[
               result,

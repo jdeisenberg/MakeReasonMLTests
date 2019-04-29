@@ -16,14 +16,19 @@ let processExampleLines = (arr: array(string)): string => {
   let endStmtPattern = [%re "/;\\s*$/"];
 
   let helper = ((result, stmt), item) => {
-    if (Js.Re.test_(endStmtPattern, stmt ++ item)) {
-      (result
-        ++ "Js.log2(\""
-        ++ escapeQuotes(stmt ++ item)
-        ++ " \",\n  "
-        ++ Js.String.replaceByRe(endStmtPattern, "", stmt ++ item)
-        ++ ");\n",
-        "")
+    let full_stmt = stmt ++ item
+    if (Js.Re.test_(endStmtPattern, full_stmt)) {
+      if (Js.Re.test_([%re "/^let\s+/"], full_stmt)) {
+        (result ++ full_stmt ++ "\n", "")
+      } else {
+        (result
+          ++ "Js.log2(\""
+          ++ escapeQuotes(full_stmt)
+          ++ " \",\n  "
+          ++ Js.String.replaceByRe(endStmtPattern, "", full_stmt)
+          ++ ");\n",
+          "")
+      }
     } else {
       (result, stmt ++ item ++ "\n  ")
     }
@@ -44,7 +49,6 @@ let lineReducer = (acc: stateType, line: string): stateType => {
           acc;
         }
       }
-
     | InExample => {
         if (Js.Re.test_([%re "/```/"], line)) {
           {...acc,
@@ -86,5 +90,5 @@ let moduleNameOpt = Belt.Array.get(Node.Process.argv, 3);
 switch (fileOpt, moduleNameOpt) {
   | (Some(inFileName), Some(moduleName)) => processFile(inFileName, moduleName)
   | ( _, _) =>
-    Js.log("Usage: " ++ nodeArg ++ " " ++ progArg ++ " InputFile.re ModuleName")
+    Js.log("Usage: " ++ nodeArg ++ " " ++ progArg ++ " ModuleName.re ModuleName")
 };
