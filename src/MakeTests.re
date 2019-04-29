@@ -18,7 +18,7 @@ let processExampleLines = (arr: array(string)): string => {
   let helper = ((result, stmt), item) => {
     let full_stmt = stmt ++ item
     if (Js.Re.test_(endStmtPattern, full_stmt)) {
-      if (Js.Re.test_([%re "/^let\s+/"], full_stmt)) {
+      if (Js.Re.test_([%re "/^let\\s+/"], full_stmt)) {
         (result ++ full_stmt ++ "\n", "")
       } else {
         (result

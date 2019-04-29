@@ -99,7 +99,7 @@ if (fileOpt !== undefined && moduleNameOpt !== undefined) {
 }
 
 if (exit === 1) {
-  console.log("Usage: " + (nodeArg + (" " + (progArg + " InputFile.re ModuleName"))));
+  console.log("Usage: " + (nodeArg + (" " + (progArg + " ModuleName.re ModuleName"))));
 }
 
 exports.escapeQuotes = escapeQuotes;
