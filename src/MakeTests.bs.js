@@ -9,34 +9,58 @@ function escapeQuotes(s) {
   return s.replace((/"/g), "\\\"");
 }
 
+function count(s, ch) {
+  var _n = 0;
+  var _total = 0;
+  while(true) {
+    var total = _total;
+    var n = _n;
+    if (n === s.length) {
+      return total;
+    } else if (s[n] === ch) {
+      _total = total + 1 | 0;
+      _n = n + 1 | 0;
+      continue ;
+    } else {
+      _n = n + 1 | 0;
+      continue ;
+    }
+  };
+}
+
 function processExampleLines(arr) {
   var endStmtPattern = (/;\s*$/);
   var helper = function (param, item) {
     var stmt = param[1];
     var result = param[0];
     var full_stmt = stmt + item;
-    if (endStmtPattern.test(full_stmt)) {
-      if ((/^let\s+/).test(full_stmt)) {
+    var newLevel = (param[2] + count(item, "{") | 0) - count(item, "}") | 0;
+    if (endStmtPattern.test(full_stmt) && newLevel === 0) {
+      if ((/^(let|module)\s+/).test(full_stmt)) {
         return /* tuple */[
                 result + (full_stmt + "\n"),
-                ""
+                "",
+                newLevel
               ];
       } else {
         return /* tuple */[
                 result + ("Js.log2(\"" + (escapeQuotes(full_stmt) + (" \",\n  " + (full_stmt.replace(endStmtPattern, "") + ");\n")))),
-                ""
+                "",
+                newLevel
               ];
       }
     } else {
       return /* tuple */[
               result,
-              stmt + (item + "\n  ")
+              stmt + (item + "\n  "),
+              newLevel
             ];
     }
   };
   return Belt_Array.reduce(arr, /* tuple */[
                 "",
-                ""
+                "",
+                0
               ], helper)[0];
 }
 
@@ -103,6 +127,7 @@ if (exit === 1) {
 }
 
 exports.escapeQuotes = escapeQuotes;
+exports.count = count;
 exports.processExampleLines = processExampleLines;
 exports.lineReducer = lineReducer;
 exports.processFile = processFile;
